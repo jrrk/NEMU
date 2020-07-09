@@ -1,14 +1,15 @@
-#include "monitor/monitor.h"
-#include "monitor/expr.h"
-#include "monitor/watchpoint.h"
-#include "nemu.h"
+#include <isa.h>
+#include <memory/paddr.h>
+#include <memory/vaddr.h>
+#include "expr.h"
+#include "watchpoint.h"
 
 #include <stdlib.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
 void cpu_exec(uint64_t);
-void isa_reg_display();
+int is_batch_mode();
 
 /* We use the `readline' library to provide more flexibility to read from stdin. */
 static char* rl_gets() {
@@ -185,8 +186,9 @@ static int cmd_load(char *args) {
   else {
     FILE *fp = fopen(arg, "r");
     assert(fp != NULL);
-    fread(&cpu, sizeof(cpu), 1, fp);
-    fread(guest_to_host(0), PMEM_SIZE, 1, fp);
+    __attribute__((unused)) int ret;
+    ret = fread(&cpu, sizeof(cpu), 1, fp);
+    ret = fread(guest_to_host(0), PMEM_SIZE, 1, fp);
     fclose(fp);
   }
   return 0;
@@ -240,8 +242,8 @@ static int cmd_help(char *args) {
   return 0;
 }
 
-void ui_mainloop(int is_batch_mode) {
-  if (is_batch_mode) {
+void ui_mainloop() {
+  if (is_batch_mode()) {
     cmd_c(NULL);
     return;
   }

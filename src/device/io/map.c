@@ -1,6 +1,7 @@
-#include "memory/memory.h"
-#include "device/map.h"
-#include "nemu.h"
+#include <isa.h>
+#include <memory/paddr.h>
+#include <memory/vaddr.h>
+#include <device/map.h>
 
 #define IO_SPACE_MAX (1024 * 1024)
 
@@ -32,7 +33,7 @@ word_t map_read(paddr_t addr, int len, IOMap *map) {
   paddr_t offset = addr - map->low;
   invoke_callback(map->callback, offset, len, false); // prepare data to read
 
-  word_t data = *(word_t *)(map->space + offset) & (~0u >> ((8 - len) << 3));
+  word_t data = *(word_t *)(map->space + offset) & (~0Lu >> ((8 - len) << 3));
   return data;
 }
 

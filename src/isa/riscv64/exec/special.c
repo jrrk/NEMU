@@ -1,15 +1,14 @@
-#include "cpu/exec.h"
-#include "monitor/monitor.h"
+#include <cpu/exec.h>
+#include <monitor/monitor.h>
+#include <monitor/difftest.h>
 
 make_EHelper(inv) {
   /* invalid opcode */
 
   uint32_t instr[2];
-  *pc = cpu.pc;
-  cpu.fetching = true;
-  instr[0] = instr_fetch(pc, 4);
-  instr[1] = instr_fetch(pc, 4);
-  cpu.fetching = false;
+  s->seq_pc = cpu.pc;
+  instr[0] = instr_fetch(&s->seq_pc, 4);
+  instr[1] = instr_fetch(&s->seq_pc, 4);
 
   printf("invalid opcode(PC = 0x%016lx): %08x %08x ...\n\n",
       cpu.pc, instr[0], instr[1]);
@@ -28,8 +27,4 @@ make_EHelper(nemu_trap) {
 
   print_asm("nemu trap");
   return;
-}
-
-make_EHelper(fence) {
-  difftest_skip_dut(1, 2);
 }

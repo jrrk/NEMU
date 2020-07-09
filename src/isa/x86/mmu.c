@@ -1,5 +1,7 @@
-#include "nemu.h"
-#include "isa/mmu.h"
+#include <isa.h>
+#include <memory/vaddr.h>
+#include <memory/paddr.h>
+#include "local-include/mmu.h"
 
 typedef union {
   struct {
@@ -10,7 +12,7 @@ typedef union {
   uint32_t addr;
 } PageAddr;
 
-static paddr_t page_walk(vaddr_t vaddr, bool is_write) {
+static inline paddr_t ptw(vaddr_t vaddr, int type) {
   PageAddr *addr = (void *)&vaddr;
   paddr_t pdir_base = cpu.cr3.val & ~PAGE_MASK;
 
@@ -31,6 +33,7 @@ static paddr_t page_walk(vaddr_t vaddr, bool is_write) {
     pde.accessed = 1;
     paddr_write(pdir_base + addr->pdir_idx * 4,  pde.val, 4);
   }
+  bool is_write = (type == MEM_TYPE_WRITE);
   if (!pte.accessed || (pte.dirty == 0 && is_write)) {
     pte.accessed = 1;
     pte.dirty |= is_write;
@@ -40,51 +43,8 @@ static paddr_t page_walk(vaddr_t vaddr, bool is_write) {
   return pte.val & ~PAGE_MASK;
 }
 
-static inline paddr_t page_translate(vaddr_t addr, bool is_write) {
-  return page_walk(addr, is_write) | (addr & PAGE_MASK);
-}
-
-word_t isa_vaddr_read(vaddr_t addr, int len) {
-  word_t data;
-  if (cpu.cr0.paging) {
-    paddr_t paddr = page_translate(addr, false);
-    uint32_t remain_byte = PAGE_SIZE - (addr & PAGE_MASK);
-    if (remain_byte < len) {
-      /* data cross the page boundary */
-      data = paddr_read(paddr, remain_byte);
-
-      paddr = page_translate(addr + remain_byte, false);
-      data |= paddr_read(paddr, len - remain_byte) << (remain_byte << 3);
-    }
-    else {
-      data = paddr_read(paddr, len);
-    }
-  }
-  else {
-    data = paddr_read(addr, len);
-  }
-
-  return data;
-}
-
-void isa_vaddr_write(vaddr_t addr, word_t data, int len) {
-  if (cpu.cr0.paging) {
-    paddr_t paddr = page_translate(addr, true);
-    uint32_t remain_byte = PAGE_SIZE - (addr & PAGE_MASK);
-    if (remain_byte < len) {
-      /* data cross the page boundary */
-      uint32_t cut = PAGE_SIZE - (addr & PAGE_MASK);
-      assert(cut < 4);
-      paddr_write(paddr, data, cut);
-
-      paddr = page_translate(addr + cut, true);
-      paddr_write(paddr, data >> (cut << 3), len - cut);
-    }
-    else {
-      paddr_write(paddr, data, len);
-    }
-  }
-  else {
-    paddr_write(addr, data, len);
-  }
+paddr_t isa_mmu_translate(vaddr_t vaddr, int type, int len) {
+  bool is_cross_page = ((vaddr & PAGE_MASK) + len) > PAGE_SIZE;
+  if (is_cross_page) return MEM_RET_CROSS_PAGE;
+  return ptw(vaddr, type) | MEM_RET_OK;
 }

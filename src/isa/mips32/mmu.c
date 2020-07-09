@@ -1,6 +1,7 @@
-#include "nemu.h"
-#include "memory/memory.h"
-#include "isa/intr.h"
+#include <isa.h>
+#include <memory/paddr.h>
+#include <memory/vaddr.h>
+#include "local-include/intr.h"
 #include <stdlib.h>
 #include <time.h>
 
@@ -40,21 +41,21 @@ void init_mmu(void) {
   srand(time(0));
 }
 
-void update_tlb(int idx) {
+static inline void update_tlb(int idx) {
   tlb[idx].hi.val = cpu.entryhi.val;
   tlb[idx].lo[0].val = cpu.entrylo0;
   tlb[idx].lo[1].val = cpu.entrylo1;
 }
 
-void tlbwr(void) {
+void tlbwr() {
   update_tlb(rand() % NR_TLB);
 }
 
-void tlbwi(void) {
+void tlbwi() {
   update_tlb(cpu.index % NR_TLB);
 }
 
-void tlbp(void) {
+void tlbp() {
   int i;
   for (i = 0; i < NR_TLB; i ++) {
     if (tlb[i].hi.VPN2 == cpu.entryhi.VPN2) {
@@ -66,9 +67,7 @@ void tlbp(void) {
   cpu.index = 0x80000000;
 }
 
-extern void longjmp_raise_intr(uint32_t NO);
-
-static inline int32_t search_ppn(vaddr_t addr, bool write) {
+static inline int32_t search_ppn(vaddr_t addr, int type) {
   union {
     struct {
       uint32_t offset :12;
@@ -84,7 +83,7 @@ static inline int32_t search_ppn(vaddr_t addr, bool write) {
       if (!tlb[i].lo[a.lo_idx].V) {
         cpu.entryhi.VPN2 = a.vpn;
 //        Log("tlb[%d] invalid at cpu.pc = 0x%08x, badaddr = 0x%08x", i, cpu.pc, addr);
-        longjmp_raise_intr(write ? EX_TLB_ST : EX_TLB_LD);
+        cpu.mem_exception = (type == MEM_TYPE_WRITE ? EX_TLB_ST : EX_TLB_LD);
         return -1;
       }
       //Assert(tlb[i].lo[a.lo_idx].V, "cpu.pc = 0x%08x, addr = 0x%08x, lo0 = 0x%08x, lo1 = 0x%08x",
@@ -94,23 +93,12 @@ static inline int32_t search_ppn(vaddr_t addr, bool write) {
   }
   cpu.entryhi.VPN2 = a.vpn;
 //  Log("tlb refill at cpu.pc = 0x%08x, badaddr = 0x%08x", cpu.pc, addr);
-  longjmp_raise_intr(TLB_REFILL | (write ? EX_TLB_ST : EX_TLB_LD));
+  cpu.mem_exception = TLB_REFILL | (type == MEM_TYPE_WRITE ? EX_TLB_ST : EX_TLB_LD);
   return -1;
 }
 
-static inline paddr_t va2pa(vaddr_t addr, bool write) {
-  if ((addr & 0x80000000u) == 0) {
-    int32_t ppn = search_ppn(addr, write);
-    addr = (addr & 0xfff) | (ppn << 12);
-  }
-
-  return addr;
-}
-
-word_t isa_vaddr_read(vaddr_t addr, int len) {
-  return paddr_read(va2pa(addr, false), len);
-}
-
-void isa_vaddr_write(vaddr_t addr, word_t data, int len) {
-  paddr_write(va2pa(addr, true), data, len);
+paddr_t isa_mmu_translate(vaddr_t vaddr, int type, int len) {
+  int32_t ppn = search_ppn(vaddr, type);
+  if (ppn == -1) return MEM_RET_FAIL;
+  return ((uint32_t)ppn << 12) | MEM_RET_OK;
 }

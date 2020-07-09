@@ -1,8 +1,9 @@
-#include "nemu.h"
-#include "monitor/diff-test.h"
-#include "csr.h"
-#include "intr.h"
-#include "isa/fpu.h"
+#include <isa.h>
+#include <monitor/difftest.h>
+#include "local-include/reg.h"
+#include "local-include/csr.h"
+#include "local-include/intr.h"
+#include "local-include/fpu.h"
 
 const char *regsl[] = {
   "$0", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
@@ -22,15 +23,11 @@ void isa_reg_display() {
   int i;
   for (i = 0; i < 32; i ++) {
     printf("%4s: " FMT_WORD " ", regsl[i], cpu.gpr[i]._64);
-    if (i % 4 == 3) {
-      printf("\n");
-    }
+    if (i % 4 == 3) printf("\n");
   }
   for (i = 0; i < 32; i ++) {
     printf("%4s: " FMT_WORD " ", fpregsl[i], cpu.fpr[i]._64);
-    if (i % 4 == 3) {
-      printf("\n");
-    }
+    if (i % 4 == 3) printf("\n");
   }
   printf("pc: " FMT_WORD " mstatus: " FMT_WORD " mcause: " FMT_WORD " mepc: " FMT_WORD "\n",
       cpu.pc, mstatus->val, mcause->val, mepc->val);
@@ -44,14 +41,10 @@ rtlreg_t isa_reg_str2val(const char *s, bool *success) {
   int i;
   *success = true;
   for (i = 0; i < 32; i ++) {
-    if (strcmp(regsl[i], s) == 0) {
-      return reg_l(i);
-    }
+    if (strcmp(regsl[i], s) == 0) return reg_l(i);
   }
 
-  if (strcmp("pc", s) == 0) {
-    return cpu.pc;
-  }
+  if (strcmp("pc", s) == 0) return cpu.pc;
 
   *success = false;
   return 0;
@@ -70,10 +63,6 @@ static bool csr_exist[4096] = {
 
 static inline word_t* csr_decode(uint32_t addr) {
   assert(addr < 4096);
-  switch (addr) {
-    case 0xc01:  // time
-      longjmp_raise_intr(EX_II);
-  }
   Assert(csr_exist[addr], "unimplemented CSR 0x%x at pc = " FMT_WORD, addr, cpu.pc);
   return &csr_array[addr];
 }
@@ -81,7 +70,9 @@ static inline word_t* csr_decode(uint32_t addr) {
 
 void csr_read(rtlreg_t *dest, uint32_t addr) {
   word_t *src = csr_decode(addr);
+#ifndef __DIFF_REF_NEMU__
   difftest_skip_dut(1, 3);
+#endif
 
   if (src == (void *)sstatus) {
     *dest = mstatus->val & SSTATUS_RMASK;
@@ -130,6 +121,10 @@ void csr_write(uint32_t addr, rtlreg_t *src) {
   }
 
   if (dest == (void *)sstatus || dest == (void *)mstatus) {
+#ifdef __DIFF_REF_QEMU__
+    // mstatus.fs is always dirty or off in QEMU 3.1.0
+    if (mstatus->fs) { mstatus->fs = 3; }
+#endif
     mstatus->sd = (mstatus->fs == 3);
   }
 }

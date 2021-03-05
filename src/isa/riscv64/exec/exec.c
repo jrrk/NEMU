@@ -256,6 +256,9 @@ vaddr_t isa_exec_once() {
 
   exec(&s);
   if (cpu.mem_exception != MEM_OK) {
+#ifdef XIANGSHAN_DEBUG
+    printf("[NEMU] raise page fault\n");
+#endif
     raise_intr(&s, cpu.mem_exception, cpu.pc);
     cpu.mem_exception = MEM_OK;
   }
